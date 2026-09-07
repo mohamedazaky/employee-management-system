@@ -1,0 +1,39 @@
+[
+    {
+        "id": 1,
+        "name": "Mohamed",
+        "age": 55,
+        "department": "Ai",
+        "employee_type": "Full_Time",
+        "contact_info": "01032",
+        "bonus": 0,
+        "deduction": 0,
+        "basic_salary": 7000.0,
+        "absent_days": 0,
+        "late_days": 0
+    },
+    {
+        "id": 2,
+        "name": "Ali",
+        "age": 33,
+        "department": "It",
+        "employee_type": "Part_Time",
+        "contact_info": "01234",
+        "bonus": 0,
+        "deduction": 0,
+        "hourly_rate": 50.0,
+        "working_hours": 0
+    },
+    {
+        "id": 3,
+        "name": "Hamda",
+        "age": 25,
+        "department": "Hr",
+        "employee_type": "Freelancer",
+        "contact_info": "015023",
+        "bonus": 0,
+        "deduction": 0,
+        "project_rate": 6000.0,
+        "completed_projects": 0
+    }
+]
