@@ -98,5 +98,18 @@
         "deduction": 0,
         "project_rate": 4500.0,
         "completed_projects": 3
+    },
+    {
+        "id": 9,
+        "name": "Ibrahim Gamal",
+        "age": 25,
+        "department": "OF",
+        "employee_type": "Full_Time",
+        "contact_info": "01223456654",
+        "bonus": 0,
+        "deduction": 0,
+        "basic_salary": 60000.0,
+        "absent_days": 0,
+        "late_days": 0
     }
 ]
