@@ -1,432 +1,198 @@
 import json
+import os
+
+# The data file always lives next to this script, no matter where the app is started from
+DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "employee_data.json")
+
+EMPLOYEE_TYPES = ["Full_Time", "Part_Time", "Freelancer"]
+
+# Deduction rules for full-time employees (EGP)
+ABSENCE_DEDUCTION = 200
+LATE_DEDUCTION = 50
+
+# The field that holds the pay rate for each employee type
+RATE_FIELD = {
+    "Full_Time": "basic_salary",
+    "Part_Time": "hourly_rate",
+    "Freelancer": "project_rate",
+}
+
+
+# ========================================
+# Input helpers (console only)
+# ========================================
+
+def get_int(prompt, min_value=None, max_value=None):
+    while True:
+        try:
+            value = int(input(prompt).strip())
+        except ValueError:
+            print("Please enter a valid number.")
+            continue
+        if min_value is not None and value < min_value:
+            print(f"Please enter a number greater than or equal to {min_value}.")
+            continue
+        if max_value is not None and value > max_value:
+            print(f"Please enter a number less than or equal to {max_value}.")
+            continue
+        return value
+
+
+def get_float(prompt, min_value=None):
+    while True:
+        try:
+            value = float(input(prompt).strip())
+        except ValueError:
+            print("Please enter a valid number.")
+            continue
+        if min_value is not None and value < min_value:
+            print(f"Please enter a number greater than or equal to {min_value}.")
+            continue
+        return value
+
+
+def format_department(department):
+    # Short names become acronyms (hr -> HR, it -> IT), longer ones get title case (finance -> Finance)
+    department = department.strip()
+    return department.upper() if len(department) <= 3 else department.title()
+
+
+def ask_yes_no(prompt):
+    return input(prompt).strip().lower() == 'y'
+
+
+# ========================================
+# Core logic (used by both the console and the web UI)
+# ========================================
 
 def is_id_exists(emp_list, new_id):
-    found = False
     for emp in emp_list:
         if emp["id"] == new_id:
-                found = True
-    return found
+            return True
+    return False
 
-def Add_Eployee(emp_list , Employee_ID , Name , Age , Department , Employee_Type, Contant_Info , salary):
 
-    if is_id_exists(emp_list ,Employee_ID ):
-        print("Error: Employee ID already exists")
-        return emp_list
-    
-    employee_info = {
-        "id":Employee_ID,"name":Name,
-        "age":Age,"department":Department,
-        "employee_type":Employee_Type , 
-        "contact_info":Contant_Info
-    }
+def find_employee(emp_list, emp_id):
+    for emp in emp_list:
+        if emp["id"] == emp_id:
+            return emp
+    return None
 
-    employee_info["bonus"] = 0
-    employee_info["deduction"] = 0
 
-    if Employee_Type == "Full_Time":
-        employee_info["basic_salary"] = salary
+def next_employee_id(emp_list):
+    if len(emp_list) == 0:
+        return 1
+    return max(emp["id"] for emp in emp_list) + 1
+
+
+def reset_type_fields(employee_info, employee_type, rate):
+    # Remove the old type-specific fields, then add the fields for the new type
+    for field in ["basic_salary", "absent_days", "late_days",
+                  "hourly_rate", "working_hours",
+                  "project_rate", "completed_projects"]:
+        employee_info.pop(field, None)
+
+    employee_info["employee_type"] = employee_type
+    if employee_type == "Full_Time":
+        employee_info["basic_salary"] = rate
         employee_info["absent_days"] = 0
         employee_info["late_days"] = 0
-    elif Employee_Type == "Part_Time":
-        employee_info["hourly_rate"] = salary
+    elif employee_type == "Part_Time":
+        employee_info["hourly_rate"] = rate
         employee_info["working_hours"] = 0
-    elif Employee_Type == "Freelancer":
-        employee_info["project_rate"] = salary
+    elif employee_type == "Freelancer":
+        employee_info["project_rate"] = rate
         employee_info["completed_projects"] = 0
+
+
+def add_employee(emp_list, employee_id, name, age, department, employee_type, contact_info, salary):
+    if is_id_exists(emp_list, employee_id):
+        print("Error: Employee ID already exists")
+        return emp_list
+
+    if employee_type not in EMPLOYEE_TYPES:
+        print("Error: Invalid employee type")
+        return emp_list
+
+    employee_info = {
+        "id": employee_id,
+        "name": name,
+        "age": age,
+        "department": department,
+        "employee_type": employee_type,
+        "contact_info": contact_info,
+        "bonus": 0,
+        "deduction": 0,
+    }
+    reset_type_fields(employee_info, employee_type, salary)
 
     emp_list.append(employee_info)
     return emp_list
 
-def display_all_employees(emp_list):
-    if len(emp_list) == 0:
-        print("No employees to display.")
-        return
 
-    print("========================================\n"
-          "ALL EMPLOYEES\n"
-          "========================================\n"
-          "ID    Name         Type         Department    \n"
-          "-------------------------------------------")
+def delete_employee_by_id(emp_list, emp_id):
+    emp = find_employee(emp_list, emp_id)
+    if emp is None:
+        return False
+    emp_list.remove(emp)
+    return True
 
+
+def add_bonus(emp, amount):
+    emp["bonus"] += amount
+
+
+def add_deduction(emp, amount):
+    emp["deduction"] += amount
+
+
+def get_rate(emp):
+    return emp.get(RATE_FIELD.get(emp["employee_type"], ""), 0)
+
+
+# ========================================
+# Search
+# ========================================
+
+def filter_employees(emp_list, name="", department="", employee_type=""):
+    results = []
     for emp in emp_list:
-        print(f"{emp['id']}     {emp['name']}     {emp['employee_type']}     {emp['department']}")
+        if name and name.strip().lower() not in emp["name"].lower():
+            continue
+        if department and emp["department"].strip().lower() != department.strip().lower():
+            continue
+        if employee_type and emp["employee_type"] != employee_type:
+            continue
+        results.append(emp)
+    return results
 
-    print("--------------------------------------------")
-    print(f"Total Employees: {len(emp_list)}")
-    
-def search_by_id(emp_list):
-    while True:
-        ID = int(input("Enter the ID: "))
-        found = False
-        for emp_id in emp_list:
-            if emp_id['id'] == ID:
-                print(f"Name: {emp_id['name']} | ID: {emp_id['id']} | Age: {emp_id['age']}")
-                found = True
-        if not found:
-            print('not found')
-            again = input("Search again? (y/n)")
-            if again.lower() == 'n':
-                break
-        else:
-            break
-    
-def search_by_name(emp_list):
-    while True:
-        name = input("Enter the Name: ")
-        found = False
-        for emp_name in emp_list:
-            if emp_name['name'] == name:
-                print(f"Name: {emp_name['name']} | ID: {emp_name['id']} | Age: {emp_name['age']}")
-                found = True
 
-        if not found:
-            print("not found")
-            again = input("Search again? (y/n): ")
-            if again.lower() == 'n':
-                break
-        else:
-            break
+def print_employee_line(emp):
+    print(f"ID: {emp['id']} | Name: {emp['name']} | Age: {emp['age']} | "
+          f"Department: {emp['department']} | Type: {emp['employee_type']} | Contact: {emp['contact_info']}")
 
-def search_by_department(emp_list):
-    while True:
-        department = input("Enter department: ")
-        found = False
-        for index , emp_department in enumerate(emp_list,start=1):
-            if emp_department['department'].strip().lower() == department.strip().lower():
-                print(f"{index}.Name: {emp_department['name']} | ID: {emp_department['id']} | Age: {emp_department['age']} | Department: {emp_department['department']}")
-                found = True
-        if not found:
-            print(f"not found this Department: {department}")
-            again = input("Search again? (y/n): ")
-            if again.lower() == 'n':
-                break
-        else:
-            break
 
-def search_by_type(emp_list):
-    while True:
-        type_e = input("Enter the employee type: ").strip().lower()
-        found = False
-        for emp_type in emp_list:
-            if emp_type['employee_type'].strip().lower() == type_e:
-                print(f"Name: {emp_type['name']} | ID: {emp_type['id']} | Age: {emp_type['age']} | Department: {emp_type['department']} | Employee type: {emp_type['employee_type']}")
-                found = True
-        if not found:
-            print(f"Not found this employee type: {type_e}")
-            again = input("Search again? (y/n): ")
-            if again.lower() == 'n':
-                break
-        else:
-            break
-
-def update_employee(emp_list):
-    while True:
-        ID = int(input("enter the id for search to update: ").strip())
-        found = False
-        for update in emp_list:
-            if update['id'] == ID:
-                found = True
-
-                while True:
-                    print("what you need update: \n"
-                    "1.Name\n"
-                    "2.ID\n"
-                    "3.Age\n"
-                    "4.Department\n"
-                    "5.Employee type\n"
-                    "6.contact\n"
-                    "or done to exit")
-                    choise = input("choise number: ").strip()
-
-                    if choise.lower() == "done":
-                        print("Done editing this employee.")
-                        break   
-
-                    elif int(choise) == 1:
-                        update['name'] = input("enter the new Name: ").strip().capitalize()
-                    elif int(choise) == 2:
-                        update['id'] = int(input("enter the new ID: ").strip())
-                    elif int(choise) == 3:
-                        update['age'] = int(input("enter the new Age: ").strip())
-                    elif int(choise) == 4:
-                        update['department'] = input("enter the new Department: ").strip().capitalize()
-                    elif int(choise) == 5:
-                        update['employee_type'] = input("enter the new Employee type: ").strip().capitalize()
-                    elif int(choise) == 6:
-                        update['contact_info'] = input("enter the new contact for employee: ").strip().capitalize()
-                    else:
-                        print("Invalid choice, try again.")
-                        continue   
-
-                    
-                    print("Employee updated successfully.")
-                    print(f"Name: {update['name']} | ID: {update['id']} | Age: {update['age']} | "
-                          f"Department: {update['department']} | Type: {update['employee_type']} | Contact: {update['contact_info']}")
-
-                    again = input("Update another field for this employee? (y/n): ").strip().lower()
-                    if again == 'n':
-                        break   
-
-                break   
-        if not found:
-            print("Not found this employee")
-            again = input("Search again? (y/n): ")
-            if again.lower() == 'n':
-                break
-        else:
-            another = input("Update another employee? (y/n): ").strip().lower()
-            if another == 'n':
-                break
-    save_data(emp_list)
-
-def delete_employee(emp_list):
-    while True:
-        ID = int(input("Enter the ID for deleting: "))
-        found = False
-        for delete_emp in emp_list:
-            if delete_emp['id'] == ID:
-                found = True 
-                print(delete_emp)
-                choice = input("To delete the employee enter (y) to exit enter (n)").strip().lower()
-                if choice == 'y':
-                    emp_list.remove(delete_emp)
-                    print("Employee deleted successfully.")   
-                else:
-                    print("Cancelled, employee not deleted.")
-                break   
-        if not found:
-            print(f"Not found this employee")
-            again = input("Search again? (y/n): ")
-            if again.lower() == 'n':
-                break
-        else:
-            another = input("You need Delete another employee? (y/n): ").strip().lower()
-            if another == 'n':
-                break
-    save_data(emp_list)
-
-def save_data(emp_list):
-    with open("employee_data.json","w") as file:
-        json.dump(emp_list,file,indent=4)
-
-def load_data():
-    try:
-        with open("employee_data.json","r") as file:
-            return json.load(file)
-    except FileNotFoundError:
-        print("Employee file not found. A new employee database will be created.")
-        return []
-    except json.decoder.JSONDecodeError:
-        print("Error while loading employee data.")
-        print("Please check the employee file.")
-        return []
-
-def add_employee_flow(emp_list):
-    while True:
-        while True:
-            try:
-                id = int(input("Enter Employee ID: ").strip())
-            except:
-                print("Please enter a valid number")
-                continue
-
-            if is_id_exists(emp_list, id):
-                print("Error: Employee ID already exists")
-                continue
-
-            break
-        name = input("Enter Employee Name: ").strip().capitalize()
-
-        while True:
-            try:
-                age = int(input("Enter Employee Age: ").strip())
-                break
-            except:
-                print("Please enter a valid number")
-
-        department = input("Enter Employee Department: ").strip().capitalize()
-        contact = input("Enter Contact Info: ").strip()
-
-        while True:
-            print("Select Employee Type (1,2,3) : \n"
-            "1.Full_Time\n"
-            "2.Part_time\n"
-            "3.Freelancer")
-            emp_type_choice = input("--> ").strip()
-
-            if emp_type_choice == '1':
-                emp_type = 'Full_Time'
-                while True:
-                    try:
-                        salary = float(input("Enter the Basic_Salary: "))
-                        break
-                    except:
-                        print("Please enter a valid number.")
-                break
-
-            elif emp_type_choice == '2':
-                emp_type = 'Part_Time'
-                while True:
-                    try:
-                        salary = float(input("Enter the Hourly_Salary: "))
-                        break
-                    except:
-                        print("Please enter a valid number.")
-                break
-
-            elif emp_type_choice == '3':
-                emp_type = 'Freelancer'
-                while True:
-                    try:
-                        salary = float(input("Enter the Project_rate: "))
-                        break
-                    except:
-                        print("Please enter a valid number.")
-                break
-
-            else:
-                print("Invalid employee type.")
-                again = input("Do you want to try again? (y,n): ").strip().lower()
-                if again == 'n':
-                    return emp_list
-
-        emp_list = Add_Eployee(emp_list , id , name , age , department , emp_type , contact , salary)
-        save_data(emp_list)
-
-        again = input("Do you need add anther Employee....?  (y,n): ").strip().lower()
-        if again != 'y':
-            return emp_list
-            
-def bonus_employee(emp_list):
-    while True:
-        while True:
-            try:
-                id = int(input("Enter id For Employee to ADD Bonus: ").strip())
-                break
-            except:
-                print("Please enter a valid number.")
-        found = False
-        for bonus_emp in emp_list:
-            if bonus_emp['id'] == id:
-                found = True
-                bonus = float(input("Enter the bonus: "))
-                temp_bonus = bonus_emp["bonus"]
-                bonus_emp["bonus"] += bonus
-                print(f"Current bonus = {temp_bonus}\n"
-                     f"new bonus entered = {bonus}\n"
-                     f"total bonus = {bonus_emp['bonus']}\n")
-        if not found:
-            print("Employee not found")
-            again = input("Search again? (y/n): ")
-            if again.lower() == 'n':
-                break
-            else:
-                continue
-
-        again_2 = input("Do you want add Bonus for other employee (y/n) ? ").strip().lower()
-        if again_2 == 'n':
-            break
-                    
-    save_data(emp_list)
-
-def deduction_employee(emp_list):
-    while True:
-        while True:
-            try:
-                id = int(input("Enter the id For Employee to ADD deduction: "))
-                break
-            except:
-                print("Please enter a valid number.")
-        found = False
-        for deduction_emp in emp_list:
-            if deduction_emp['id'] == id:
-                found = True
-                deduction = float(input("Enter the amount of deduction: "))
-                temp_deduction = deduction_emp['deduction']
-                deduction_emp['deduction'] += deduction
-                print(f"Current deduction = {temp_deduction}\n"
-                      f"New deduction entered = {deduction}\n"
-                      f"thr total deduction = {deduction_emp['deduction']}")
-
-        if not found:
-            again = input("Not found you need try again (y | n) ? ").strip().lower()
-            if again == 'n':
-                break
-            else:
-                continue
-        again_2 = input("Do you need add the new deduction for new employee (y | n) ? ").strip().lower()
-        if again_2 == 'n':
-            break
-    save_data(emp_list)
-
-def recored_attendance(emp_list):
-    while True:
-        while True:
-            try:
-                id = int(input("Enter the id For Employee to ADD Atendence: "))
-                break
-            except:
-                print("Please enter a valid number.")
-        found = False
-        for attend in emp_list:
-            if attend['id'] == id:
-                found = True
-                if attend['employee_type'] == 'Full_Time':
-                    choice = input("Select from (1 | 2):\n"
-                    "1.Absent Day\n"
-                    "2.Late Day\n"
-                    "-->")
-                    if choice == '1':
-                        attend["absent_days"] += 1
-                        print(f"Attendance recorded successfully! \nTotal Absences Day: {attend['absent_days']}")
-                    elif choice == '2':
-                        attend["late_days"] += 1
-                        print(f"Attendance recorded successfully! \nTotal Late Days: {attend['late_days']}")
-                    else:
-                        print("your choose incorrect")
-                        break
-
-                elif attend["employee_type"] == "Part_Time":
-                    while True:
-                        try:
-                            houer_number = int(input("Enter the number of houre: "))
-                            break
-                        except:
-                            print("Please enter a valid number")
-                    attend["working_hours"] += houer_number
-                    print(f"Attendance recorded successfully! \nTotal Working Houre: {attend['working_hours']}")
-
-                elif attend["employee_type"] == "Freelancer":
-                    attend["completed_projects"] += 1
-                    print(f"Attendance recorded successfully! \nTotal Working Houre: {attend['completed_projects']}")
-        if not found:
-            again = input("Not found you need try again (y | n) ? ").strip().lower()
-            if again == 'n':
-                break
-            else:
-                continue
-
-        again_2 = input("Do you need add a new Attendence for new employee (y | n) ? ").strip().lower()
-        if again_2 == 'n':
-            break
-
-    save_data(emp_list)
+# ========================================
+# Salary
+# ========================================
 
 def calculate_full_time_salary(emp_full_time):
-    absence_deduction = emp_full_time["absent_days"] * 200
-    late_deduction = emp_full_time["late_days"] * 50
-    final_salary = emp_full_time["basic_salary"] + emp_full_time["bonus"] - emp_full_time["deduction"] - absence_deduction - late_deduction  
-    return final_salary          
+    absence_deduction = emp_full_time["absent_days"] * ABSENCE_DEDUCTION
+    late_deduction = emp_full_time["late_days"] * LATE_DEDUCTION
+    final_salary = (emp_full_time["basic_salary"] + emp_full_time["bonus"]
+                    - emp_full_time["deduction"] - absence_deduction - late_deduction)
+    return final_salary
+
 
 def calculate_part_time_salary(emp_part_time):
     salary = emp_part_time["hourly_rate"] * emp_part_time["working_hours"]
-    final_salary = salary + emp_part_time["bonus"] - emp_part_time["deduction"]
-    return final_salary
+    return salary + emp_part_time["bonus"] - emp_part_time["deduction"]
 
-def calculate_freelancer_salary(freelancer_salary):
-    salary = freelancer_salary["project_rate"] * freelancer_salary["completed_projects"]
-    final_salary = salary + freelancer_salary["bonus"] - freelancer_salary["deduction"]
-    return final_salary
+
+def calculate_freelancer_salary(emp_freelancer):
+    salary = emp_freelancer["project_rate"] * emp_freelancer["completed_projects"]
+    return salary + emp_freelancer["bonus"] - emp_freelancer["deduction"]
+
 
 def calculate_employee_salary(emp):
     if emp["employee_type"] == "Full_Time":
@@ -435,97 +201,376 @@ def calculate_employee_salary(emp):
         return calculate_part_time_salary(emp)
     elif emp["employee_type"] == "Freelancer":
         return calculate_freelancer_salary(emp)
+    return 0
 
-def display_salary_details(emp_list):
-    while True:
-        while True:
-            try:
-                id = int(input("Enter id For Employee to display salary details: ").strip())
-                break 
-            except:
-                print("Please enter a valid number.")
-        found = False
-        for salary_details in emp_list:
-            if salary_details['id'] == id:
-                found = True
-                final_salary = calculate_employee_salary(salary_details)
-                print(f"========================================\n"
-                       "SALARY DETAILS\n"
-                       "========================================\n"
-                       "\n"
-                       f"Employee: {salary_details['name']}\n"
-                       f"Employee Type: {salary_details['employee_type']}\n"
-                       "\n")
-                if  salary_details['employee_type'] == 'Full_Time':
-                    print(f"Basic salary:{salary_details['basic_salary']}\n"
-                          f"Bonus: {salary_details['bonus']}\n"
-                          f"Deduction: {salary_details['deduction']}\n"
-                          f"Absent day: {salary_details['absent_days']}\n"
-                          f"Absence Deduction: {salary_details['absent_days'] * 200}\n"
-                          f"Late day: {salary_details['late_days']}\n"
-                          f"Late Deduction: {salary_details['late_days'] * 50}")
-                elif salary_details['employee_type'] == 'Part_Time':
-                    print(f"Hourly Rate: {salary_details['hourly_rate']}\n"
-                          f"Working Hours: {salary_details['working_hours']}")
-                elif salary_details['employee_type'] == 'Freelancer':
-                    print(f"Project Rate: {salary_details['project_rate']}\n"
-                          f"Completed Projects: {salary_details['completed_projects']}")
-
-                print("----------------------------------------\n"
-                      f"Final Salary: {final_salary}\n"
-                      "========================================")
-
-        if not found:
-            again = input("Not found you need try again (y | n)? ").strip().lower()
-            if again == 'n':
-                break
-            else:
-                continue
-        again_2 = input("To Desplay another salary (y | n)")
-        if again_2 == 'n':
-            break
 
 def calculate_total_payroll(emp_list):
     total = 0
-    for total_salary in emp_list:
-        total += calculate_employee_salary(total_salary)
+    for emp in emp_list:
+        total += calculate_employee_salary(emp)
     return total
+
 
 def calculate_average_salary(emp_list):
     if len(emp_list) == 0:
         return 0
-    total = calculate_total_payroll(emp_list)
-    return total / len(emp_list)
+    return calculate_total_payroll(emp_list) / len(emp_list)
+
 
 def find_highest_paid_employee(emp_list):
     if len(emp_list) == 0:
         return None
+    return max(emp_list, key=calculate_employee_salary)
 
-    highest_emp = emp_list[0]
-    highest_salary = calculate_employee_salary(highest_emp)
-
-    for emp in emp_list:
-        current_salary = calculate_employee_salary(emp)
-        if current_salary > highest_salary:
-            highest_salary = current_salary
-            highest_emp = emp
-
-    return highest_emp
 
 def find_lowest_paid_employee(emp_list):
     if len(emp_list) == 0:
         return None
+    return min(emp_list, key=calculate_employee_salary)
 
-    lowest_emp = emp_list[0]
-    lowest_salary = calculate_employee_salary(lowest_emp)
 
+def get_statistics(emp_list):
+    type_counts = {emp_type: 0 for emp_type in EMPLOYEE_TYPES}
+    departments = {}
     for emp in emp_list:
-        current_salary = calculate_employee_salary(emp)
-        if current_salary < lowest_salary:
-            lowest_salary = current_salary
-            lowest_emp = emp
+        if emp["employee_type"] in type_counts:
+            type_counts[emp["employee_type"]] += 1
+        dept = emp["department"]
+        departments[dept] = departments.get(dept, 0) + 1
 
-    return lowest_emp
+    return {
+        "total_employees": len(emp_list),
+        "type_counts": type_counts,
+        "departments": departments,
+        "total_payroll": calculate_total_payroll(emp_list),
+        "average_salary": calculate_average_salary(emp_list),
+    }
+
+
+# ========================================
+# File handling
+# ========================================
+
+def save_data(emp_list):
+    with open(DATA_FILE, "w", encoding="utf-8") as file:
+        json.dump(emp_list, file, indent=4, ensure_ascii=False)
+
+
+def load_data():
+    try:
+        with open(DATA_FILE, "r", encoding="utf-8") as file:
+            data = json.load(file)
+            if not isinstance(data, list):
+                print("Employee file has an unexpected format. Starting with an empty list.")
+                return []
+            return data
+    except FileNotFoundError:
+        print("Employee file not found. A new employee database will be created.")
+        return []
+    except json.decoder.JSONDecodeError:
+        print("Error while loading employee data.")
+        print("Please check the employee file.")
+        return []
+
+
+# ========================================
+# Console flows (menu options)
+# ========================================
+
+def choose_employee_type():
+    while True:
+        print("Select Employee Type (1, 2, 3):\n"
+              "1. Full_Time\n"
+              "2. Part_Time\n"
+              "3. Freelancer")
+        choice = input("--> ").strip()
+        if choice in ['1', '2', '3']:
+            return EMPLOYEE_TYPES[int(choice) - 1]
+        print("Invalid employee type, try again.")
+
+
+def ask_rate(employee_type):
+    labels = {
+        "Full_Time": "Enter the Basic Salary: ",
+        "Part_Time": "Enter the Hourly Rate: ",
+        "Freelancer": "Enter the Project Rate: ",
+    }
+    return get_float(labels[employee_type], min_value=0)
+
+
+def ask_existing_employee(emp_list, prompt):
+    # Keeps asking until an existing employee is found, or returns None if the user gives up
+    while True:
+        emp = find_employee(emp_list, get_int(prompt))
+        if emp is not None:
+            return emp
+        print("Employee not found.")
+        if not ask_yes_no("Search again? (y/n): "):
+            return None
+
+
+def add_employee_flow(emp_list):
+    while True:
+        while True:
+            emp_id = get_int("Enter Employee ID: ", min_value=1)
+            if is_id_exists(emp_list, emp_id):
+                print("Error: Employee ID already exists")
+                continue
+            break
+
+        name = input("Enter Employee Name: ").strip().title()
+        age = get_int("Enter Employee Age: ", min_value=16, max_value=80)
+        department = format_department(input("Enter Employee Department: "))
+        contact = input("Enter Contact Info: ").strip()
+        emp_type = choose_employee_type()
+        salary = ask_rate(emp_type)
+
+        emp_list = add_employee(emp_list, emp_id, name, age, department, emp_type, contact, salary)
+        save_data(emp_list)
+        print("Employee added successfully.")
+
+        if not ask_yes_no("Do you want to add another employee? (y/n): "):
+            return emp_list
+
+
+def display_all_employees(emp_list):
+    if len(emp_list) == 0:
+        print("No employees to display.")
+        return
+
+    print("========================================\n"
+          "ALL EMPLOYEES\n"
+          "========================================")
+    print(f"{'ID':<6}{'Name':<15}{'Type':<14}{'Department':<14}")
+    print("-" * 49)
+    for emp in emp_list:
+        print(f"{emp['id']:<6}{emp['name']:<15}{emp['employee_type']:<14}{emp['department']:<14}")
+    print("-" * 49)
+    print(f"Total Employees: {len(emp_list)}")
+
+
+def search_by_id(emp_list):
+    emp = ask_existing_employee(emp_list, "Enter the ID: ")
+    if emp is not None:
+        print_employee_line(emp)
+
+
+def run_search(emp_list, prompt, make_filter):
+    while True:
+        text = input(prompt).strip()
+        results = make_filter(text)
+        if results:
+            for emp in results:
+                print_employee_line(emp)
+            return
+        print(f"No employees found for: {text}")
+        if not ask_yes_no("Search again? (y/n): "):
+            return
+
+
+def search_by_name(emp_list):
+    run_search(emp_list, "Enter the Name: ",
+               lambda text: filter_employees(emp_list, name=text))
+
+
+def search_by_department(emp_list):
+    run_search(emp_list, "Enter department: ",
+               lambda text: filter_employees(emp_list, department=text))
+
+
+def search_by_type(emp_list):
+    def by_type(text):
+        for emp_type in EMPLOYEE_TYPES:
+            if emp_type.lower() == text.lower().replace("-", "_").replace(" ", "_"):
+                return filter_employees(emp_list, employee_type=emp_type)
+        return []
+
+    run_search(emp_list, "Enter the employee type (Full_Time / Part_Time / Freelancer): ", by_type)
+
+
+def update_employee(emp_list):
+    while True:
+        emp = ask_existing_employee(emp_list, "Enter the ID of the employee to update: ")
+        if emp is None:
+            break
+
+        while True:
+            print("What do you want to update?\n"
+                  "1. Name\n"
+                  "2. ID\n"
+                  "3. Age\n"
+                  "4. Department\n"
+                  "5. Employee type\n"
+                  "6. Contact\n"
+                  "7. Pay rate\n"
+                  "or type 'done' to finish")
+            choice = input("Choice number: ").strip().lower()
+
+            if choice == "done":
+                print("Done editing this employee.")
+                break
+            elif choice == '1':
+                emp['name'] = input("Enter the new Name: ").strip().title()
+            elif choice == '2':
+                new_id = get_int("Enter the new ID: ", min_value=1)
+                if new_id != emp['id'] and is_id_exists(emp_list, new_id):
+                    print("Error: Employee ID already exists")
+                    continue
+                emp['id'] = new_id
+            elif choice == '3':
+                emp['age'] = get_int("Enter the new Age: ", min_value=16, max_value=80)
+            elif choice == '4':
+                emp['department'] = format_department(input("Enter the new Department: "))
+            elif choice == '5':
+                new_type = choose_employee_type()
+                if new_type != emp['employee_type']:
+                    reset_type_fields(emp, new_type, ask_rate(new_type))
+            elif choice == '6':
+                emp['contact_info'] = input("Enter the new contact info: ").strip()
+            elif choice == '7':
+                emp[RATE_FIELD[emp['employee_type']]] = ask_rate(emp['employee_type'])
+            else:
+                print("Invalid choice, try again.")
+                continue
+
+            save_data(emp_list)
+            print("Employee updated successfully.")
+            print_employee_line(emp)
+
+            if not ask_yes_no("Update another field for this employee? (y/n): "):
+                break
+
+        if not ask_yes_no("Update another employee? (y/n): "):
+            break
+    save_data(emp_list)
+
+
+def delete_employee(emp_list):
+    while True:
+        emp = ask_existing_employee(emp_list, "Enter the ID for deleting: ")
+        if emp is None:
+            break
+
+        print_employee_line(emp)
+        if ask_yes_no("Delete this employee? (y/n): "):
+            emp_list.remove(emp)
+            save_data(emp_list)
+            print("Employee deleted successfully.")
+        else:
+            print("Cancelled, employee not deleted.")
+
+        if not ask_yes_no("Do you want to delete another employee? (y/n): "):
+            break
+
+
+def bonus_employee(emp_list):
+    while True:
+        emp = ask_existing_employee(emp_list, "Enter the ID of the employee to add a bonus: ")
+        if emp is None:
+            break
+
+        amount = get_float("Enter the bonus: ", min_value=0)
+        old_bonus = emp["bonus"]
+        add_bonus(emp, amount)
+        save_data(emp_list)
+        print(f"Current bonus = {old_bonus}\n"
+              f"New bonus entered = {amount}\n"
+              f"Total bonus = {emp['bonus']}")
+
+        if not ask_yes_no("Add a bonus for another employee? (y/n): "):
+            break
+
+
+def deduction_employee(emp_list):
+    while True:
+        emp = ask_existing_employee(emp_list, "Enter the ID of the employee to add a deduction: ")
+        if emp is None:
+            break
+
+        amount = get_float("Enter the amount of deduction: ", min_value=0)
+        old_deduction = emp["deduction"]
+        add_deduction(emp, amount)
+        save_data(emp_list)
+        print(f"Current deduction = {old_deduction}\n"
+              f"New deduction entered = {amount}\n"
+              f"Total deduction = {emp['deduction']}")
+
+        if not ask_yes_no("Add a deduction for another employee? (y/n): "):
+            break
+
+
+def record_attendance(emp_list):
+    while True:
+        emp = ask_existing_employee(emp_list, "Enter the ID of the employee to record attendance: ")
+        if emp is None:
+            break
+
+        if emp['employee_type'] == 'Full_Time':
+            choice = input("Select (1 | 2):\n"
+                           "1. Absent day\n"
+                           "2. Late day\n"
+                           "--> ").strip()
+            if choice == '1':
+                emp["absent_days"] += 1
+                print(f"Attendance recorded successfully!\nTotal absent days: {emp['absent_days']}")
+            elif choice == '2':
+                emp["late_days"] += 1
+                print(f"Attendance recorded successfully!\nTotal late days: {emp['late_days']}")
+            else:
+                print("Invalid choice, nothing recorded.")
+
+        elif emp["employee_type"] == "Part_Time":
+            hours = get_int("Enter the number of hours: ", min_value=1)
+            emp["working_hours"] += hours
+            print(f"Attendance recorded successfully!\nTotal working hours: {emp['working_hours']}")
+
+        elif emp["employee_type"] == "Freelancer":
+            emp["completed_projects"] += 1
+            print(f"Project recorded successfully!\nTotal completed projects: {emp['completed_projects']}")
+
+        save_data(emp_list)
+        if not ask_yes_no("Record attendance for another employee? (y/n): "):
+            break
+
+
+def display_salary_details(emp_list):
+    while True:
+        emp = ask_existing_employee(emp_list, "Enter the ID of the employee to display salary details: ")
+        if emp is None:
+            break
+
+        print("========================================\n"
+              "SALARY DETAILS\n"
+              "========================================\n"
+              f"Employee: {emp['name']}\n"
+              f"Employee Type: {emp['employee_type']}\n")
+
+        if emp['employee_type'] == 'Full_Time':
+            print(f"Basic Salary: {emp['basic_salary']}\n"
+                  f"Bonus: {emp['bonus']}\n"
+                  f"Deduction: {emp['deduction']}\n"
+                  f"Absent Days: {emp['absent_days']}\n"
+                  f"Absence Deduction: {emp['absent_days'] * ABSENCE_DEDUCTION}\n"
+                  f"Late Days: {emp['late_days']}\n"
+                  f"Late Deduction: {emp['late_days'] * LATE_DEDUCTION}")
+        elif emp['employee_type'] == 'Part_Time':
+            print(f"Hourly Rate: {emp['hourly_rate']}\n"
+                  f"Working Hours: {emp['working_hours']}\n"
+                  f"Bonus: {emp['bonus']}\n"
+                  f"Deduction: {emp['deduction']}")
+        elif emp['employee_type'] == 'Freelancer':
+            print(f"Project Rate: {emp['project_rate']}\n"
+                  f"Completed Projects: {emp['completed_projects']}\n"
+                  f"Bonus: {emp['bonus']}\n"
+                  f"Deduction: {emp['deduction']}")
+
+        print("----------------------------------------\n"
+              f"Final Salary: {calculate_employee_salary(emp):,.2f} EGP\n"
+              "========================================")
+
+        if not ask_yes_no("Display another salary? (y/n): "):
+            break
+
 
 def payroll_report(emp_list):
     if len(emp_list) == 0:
@@ -534,71 +579,36 @@ def payroll_report(emp_list):
 
     print("========================================\n"
           "MONTHLY PAYROLL REPORT\n"
-          "========================================\n"
-          "\nID     Name    Type           Final Salary\n"
-          "--------------------------------------------------")
+          "========================================")
+    print(f"{'ID':<6}{'Name':<15}{'Type':<14}{'Final Salary':>14}")
+    print("-" * 49)
+    for emp in emp_list:
+        print(f"{emp['id']:<6}{emp['name']:<15}{emp['employee_type']:<14}{calculate_employee_salary(emp):>14,.2f}")
+    print("-" * 49)
 
-    for all_emp in emp_list:
-        final_salary = calculate_employee_salary(all_emp)
-        print(f"{all_emp['id']}      {all_emp['name']}     {all_emp['employee_type']}      {final_salary}")
-
-    print("--------------------------------------------------")
-
-    total_payroll = calculate_total_payroll(emp_list)
-    average_salary = calculate_average_salary(emp_list)
-    print(f"Total Payroll: {total_payroll} EGP")
-    print(f"Average Salary: {average_salary} EGP")
+    print(f"Total Payroll: {calculate_total_payroll(emp_list):,.2f} EGP")
+    print(f"Average Salary: {calculate_average_salary(emp_list):,.2f} EGP")
 
     highest_paid = find_highest_paid_employee(emp_list)
     lowest_paid = find_lowest_paid_employee(emp_list)
+    print(f"\nHighest Paid Employee:\n{highest_paid['name']} - {calculate_employee_salary(highest_paid):,.2f} EGP")
+    print(f"\nLowest Paid Employee:\n{lowest_paid['name']} - {calculate_employee_salary(lowest_paid):,.2f} EGP")
 
-    print(f"\nHighest Paid Employee:")
-    print(f"{highest_paid['name']} - {calculate_employee_salary(highest_paid)} EGP")
-
-    print(f"\nLowest Paid Employee:")
-    print(f"{lowest_paid['name']} - {calculate_employee_salary(lowest_paid)} EGP")
 
 def display_statistics(emp_list):
     if len(emp_list) == 0:
         print("No employees to display.")
         return
 
-    total_employees = len(emp_list)
-
-    full_time_count = 0
-    part_time_count = 0
-    freelancer_count = 0
-    departments = {}
-
-    for emp in emp_list:
-        if emp['employee_type'] == 'Full_Time':
-            full_time_count += 1
-        elif emp['employee_type'] == 'Part_Time':
-            part_time_count += 1
-        elif emp['employee_type'] == 'Freelancer':
-            freelancer_count += 1
-
-        dept = emp['department']
-        if dept in departments:
-            departments[dept] += 1
-        else:
-            departments[dept] = 1
-
-    total_payroll = calculate_total_payroll(emp_list)
-    average_salary = calculate_average_salary(emp_list)
-
+    stats = get_statistics(emp_list)
     print("========================================\n"
           "EMPLOYEE STATISTICS\n"
           "========================================\n")
-
-    print(f"Total Employees: {total_employees}\n")
-
-    print(f"Full-Time Employees: {full_time_count}")
-    print(f"Part-Time Employees: {part_time_count}")
-    print(f"Freelancers: {freelancer_count}\n")
-
-    for dept, count in departments.items():
+    print(f"Total Employees: {stats['total_employees']}\n")
+    print(f"Full-Time Employees: {stats['type_counts']['Full_Time']}")
+    print(f"Part-Time Employees: {stats['type_counts']['Part_Time']}")
+    print(f"Freelancers: {stats['type_counts']['Freelancer']}\n")
+    for dept, count in stats['departments'].items():
         print(f"{dept} Department: {count}")
-
-    print(f"\nTotal Payroll: {total_payroll} EGP")
-    print(f"Average Salary: {average_salary} EGP")
+    print(f"\nTotal Payroll: {stats['total_payroll']:,.2f} EGP")
+    print(f"Average Salary: {stats['average_salary']:,.2f} EGP")
