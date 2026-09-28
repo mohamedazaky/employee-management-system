@@ -35,7 +35,7 @@ cd employee-management-system
 pip install -r requirements.txt
 ```
 
-Web dashboard:
+Web dashboard (on Windows you can just double-click `run_app.bat`):
 
 ```bash
 streamlit run app.py
